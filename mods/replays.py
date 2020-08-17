@@ -24,20 +24,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Optional, Callable
+    from typing import Optional, Callable, Dict
 
 from bastd.ui import watch
 from bastd.ui.fileselector import FileSelectorWindow
-import ba, os
 
-def get_translate() -> dict:
+import ba, os, shutil, \
+    threading
+
+def get_translate() -> Dict[str, str]:
     lang = ba.app.language
     if lang == 'Russian':
         return {
             'upload': 'Загрузить реплей',
             'save': 'Сохранить реплей'
         }
-    # UPDATE THIS
+    # add new languages in future
     else:
         return {
             'upload': 'Upload replay',
@@ -60,14 +62,12 @@ def get_upload_path() -> str:
     return get_replays_dir()
 
 def copy_replay(src: str, dst: str, callback: Callable = None) -> None:
-    from threading import Thread
     def run() -> None:
         if os.path.exists(src) and os.path.exists(dst):
             if not os.path.exists(dst + os.path.sep +
                   os.path.basename(src)):
-                from shutil import copy
                 try:
-                    copy(src, dst)
+                    shutil.copy(src, dst)
                 except:
                     pass 
                 # pass permission errors
@@ -77,9 +77,9 @@ def copy_replay(src: str, dst: str, callback: Callable = None) -> None:
             elif callback is not None:
                 ba.pushcall(ba.Call(callback, False),
                     from_other_thread=True)
-    Thread(target=run).start()
+    threading.Thread(target=run).start()
 
-def _watch_upload_replays(self) -> None:
+def upload_replays(self) -> None:
     def on_copy(result: bool = False) -> None:
         if result:
             with ba.Context('ui'):
@@ -90,15 +90,15 @@ def _watch_upload_replays(self) -> None:
             copy_replay(path, get_upload_path(), on_copy)
     open_fileselector(get_save_path(), on_callback)
 
-def _watch_save_replays(self) -> None:
+def save_replays(self) -> None:
     def on_callback(path: str = None) -> None:
         if path:
             copy_replay(path, get_save_path(), None)
     open_fileselector(get_upload_path(), on_callback)
 
-def _watch__set_tab(self, tab: str) -> None:
+def _set_tab(self, tab: str) -> None:
     if tab != 'my_replays':
-        watch__set_tab(self, tab)
+        self._set_tab_replays(tab)
         return
     elif self._current_tab == tab:
         return
@@ -122,7 +122,7 @@ def _watch__set_tab(self, tab: str) -> None:
     b_color = (0.6, 0.53, 0.63)
     b_textcolor = (0.75, 0.7, 0.8)
 
-    watch__set_tab(self, tab)
+    self._set_tab_replays(tab)
     for child in self._tab_container.get_children():
         if child and child.get_widget_type() == 'button':
             ba.buttonwidget(edit=child, 
@@ -154,13 +154,26 @@ def _watch__set_tab(self, tab: str) -> None:
         label=ba.Lstr(value = tr['save']),
         autoselect=True)
 
+def redefine(methods: Dict[str, Callable]) -> None:
+    for n, func in methods.items():
+        if hasattr(watch.WatchWindow, n):
+            setattr(watch.WatchWindow, n + '_replays', 
+                getattr(watch.WatchWindow, n))
+        setattr(watch.WatchWindow, n, func)
+
+def i_was_imported() -> bool:
+    result = bool(getattr(ba.app, '_replays_enabled', False))
+    setattr(ba.app, '_replays_enabled', True)
+    return result
+
 def main() -> None:
-    for attr in [
-        '_set_tab']:
-        globals().update({'watch_' + attr: getattr(watch.WatchWindow, attr)})
-    for attr, obj in globals().items():
-        if attr.startswith('_watch_'):
-            setattr(watch.WatchWindow, attr[7:], obj)
+    if i_was_imported():
+        return
+    redefine({
+        '_set_tab': _set_tab,
+        'upload_replays': upload_replays,
+        'save_replays': save_replays
+    })
 
 # ba_meta export plugin
 class SaveAneShareReplays(ba.Plugin):

@@ -21,15 +21,16 @@
 
 # ba_meta require api 6
 
-from ba import Plugin
+import ba
 
 def main() -> None:
-    from ba import _account, internal
-    
-    _account.have_pro = internal.have_pro = lambda : True
-    _account.have_pro_options = internal.have_pro_options = lambda : True
+    for attr in [
+        'have_pro',
+        'have_pro_options']: 
+        for module in [ba._account, ba.internal]:
+            setattr(module, attr, lambda : True)
 
 # ba_meta export plugin
-class UnlockProVersion(Plugin):
+class ProVersion(ba.Plugin):
     def on_app_launch(self) -> None:
         main()

@@ -54,7 +54,7 @@ def __init__(self,
     self._internet_search_activate_button: Optional[ba.Widget] = None
     self._internet_search_query: Optional[str] = None
     self._public_parties_reserve: Dict[str, Dict[str, Any]] = {}
-    return self.__init___old(
+    return self.__init___server_search(
         transition = transition, 
         origin_widget = origin_widget
     )
@@ -90,7 +90,7 @@ def search(self, called_by_button: bool = False) -> None:
 
 def _on_public_party_query_result(
           self, result: Optional[Dict[str, Any]]) -> None:
-    self._on_public_party_query_result_old(result)
+    self._on_public_party_query_result_server_search(result)
     self._public_parties_reserve = copy(self._public_parties)
     self.search()
 
@@ -99,17 +99,17 @@ def _rebuild_public_party_list(self, force: int = 0) -> None:
         return
     elif force == 2:
         self._last_public_party_list_rebuild_time = 0.0
-    self._rebuild_public_party_list_old()
+    self._rebuild_public_party_list_server_search()
 
 def _ping_callback(self, address: str, port: Optional[int],
           result: Optional[int]) -> None:
     party = self._public_parties.get(address + '_' + str(port))
     if party and party.get('ping_widget', None):
         self._rebuild_public_party_list(1)
-    return self._ping_callback_old(address, port, result)
+    return self._ping_callback_server_search(address, port, result)
 
 def _set_internet_tab(self, value: str, playsound: bool = False) -> None:
-    self._set_internet_tab_old(value, playsound)
+    self._set_internet_tab_server_search(value, playsound)
 
     for widget in [
         self._internet_search_field,
@@ -147,30 +147,27 @@ def _set_internet_tab(self, value: str, playsound: bool = False) -> None:
 def redefine(methods: Dict[str, Callable]) -> None:
     for n, func in methods.items():
         if hasattr(gather.GatherWindow, n):
-            setattr(gather.GatherWindow, n + '_old', 
+            setattr(gather.GatherWindow, n + '_server_search', 
                 getattr(gather.GatherWindow, n))
         setattr(gather.GatherWindow, n, func)
 
-def am_i_imported() -> bool:
-    return getattr(ba.app, 'server_search_enabled', False)
-
 def i_was_imported() -> bool:
-    if not am_i_imported():
-        ba.app.server_search_enabled = True
-        return True
-    return False
+    result = bool(getattr(ba.app, '_server_search_enabled', False))
+    setattr(ba.app, '_server_search_enabled', True)
+    return result
 
 def main() -> None:
     if i_was_imported():
-        redefine({
-            '__init__': __init__,
-            'set_search_query': set_search_query,
-            'search': search,
-            '_on_public_party_query_result': _on_public_party_query_result,
-            '_rebuild_public_party_list': _rebuild_public_party_list,
-            '_ping_callback': _ping_callback,
-            '_set_internet_tab': _set_internet_tab
-        })
+        return
+    redefine({
+        '__init__': __init__,
+        'set_search_query': set_search_query,
+        'search': search,
+        '_on_public_party_query_result': _on_public_party_query_result,
+        '_rebuild_public_party_list': _rebuild_public_party_list,
+        '_ping_callback': _ping_callback,
+        '_set_internet_tab': _set_internet_tab
+    })
 
 # ba_meta export plugin
 class ServerSearch(ba.Plugin):
