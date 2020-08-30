@@ -26,75 +26,126 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Optional, Callable, Dict
 
+from enum import Enum
 from bastd.ui import watch
 from bastd.ui.fileselector import FileSelectorWindow
+from copy import copy
+from _ba import get_replays_dir
 
-import ba, os, shutil, \
-    threading
+import ba
 
-def get_translate() -> Dict[str, str]:
-    lang = ba.app.language
-    if lang == 'Russian':
-        return {
-            'upload': 'Загрузить реплей',
-            'save': 'Сохранить реплей'
-        }
-    # add new languages in future
+import os
+import shutil
+import threading
+
+
+class LanguageEnglish(Enum):
+    UPLOAD = 'Upload replay'
+    SAVE = 'Save replay'
+    SUCCESS = 'Success'
+    UNSUCCESS = 'Unsuccess'
+
+
+class LanguageRussian(Enum):
+    UPLOAD = 'Загрузить реплей'
+    SAVE = 'Сохранить реплей'
+    SUCCESS = 'Успешно'
+    UNSUCCESS = 'Возникла ошибка'
+
+
+Language = copy(globals().get('Language' + ba.app.language,
+                              LanguageEnglish))
+
+
+def screenmessage(message: Language) -> None:
+    if message not in Language:
+        raise ValueError()
+    if message == Language.SUCCESS:
+        color = (0, 1.0, 0)
+    elif message == Language.UNSUCCESS:
+        color = (1.0, 0, 0)
     else:
-        return {
-            'upload': 'Upload replay',
-            'save': 'Save replay'
-        }
-
-def open_fileselector(path: str, callback: Callable = None) -> None:
+        color = (1.0, 1.0, 1.0)
     with ba.Context('ui'):
-        FileSelectorWindow(path, callback, True,
-            ['brp'], False)
+        ba.screenmessage(
+            message=message.value,
+            color=color)
+
+
+def open_fileselector(
+        path: str,
+        callback: Callable = None) -> None:
+    with ba.Context('ui'):
+        FileSelectorWindow(path,
+                           callback, True, ['brp'], False)
+
 
 def get_save_path() -> str:
-    path = ba.app.python_directory_user + os.path.sep + 'replays'
+    path = os.path.join(ba.app.python_directory_user, 'replays')
     if not os.path.exists(path):
         os.mkdir(path)
     return path
 
+
 def get_upload_path() -> str:
-    from _ba import get_replays_dir
     return get_replays_dir()
 
-def copy_replay(src: str, dst: str, callback: Callable = None) -> None:
-    def run() -> None:
-        if os.path.exists(src) and os.path.exists(dst):
-            if not os.path.exists(dst + os.path.sep +
-                  os.path.basename(src)):
-                try:
-                    shutil.copy(src, dst)
-                except:
-                    pass 
-                # pass permission errors
-                if callback is not None:
-                    ba.pushcall(ba.Call(callback, True), 
+
+def thread(
+        call: Callable,
+        callback: Optional[Callable] = None) -> None:
+    def _call() -> None:
+        result = call()
+        if callback:
+            ba.pushcall(ba.Call(callback, result),
                         from_other_thread=True)
-            elif callback is not None:
-                ba.pushcall(ba.Call(callback, False),
-                    from_other_thread=True)
-    threading.Thread(target=run).start()
 
-def upload_replays(self) -> None:
-    def on_copy(result: bool = False) -> None:
-        if result:
+    threading.Thread(target=_call).start()
+
+
+def copy_replay(src: str, dst: str) -> int:
+    if (src and dst and os.path.exists(src) and
+            os.path.exists(dst)):
+        if not os.path.exists(dst + os.path.sep + os.path.basename(src)):
+            try:
+                shutil.copy(src, dst)
+            except Exception as exc:
+                print('coping exc:', exc)
+                return 1
+            else:
+                return 0
+    return 2
+
+
+def upload_replays(watch_window: watch.WatchWindow) -> None:
+    def on_copy(result: bool) -> None:
+        if not result:
+            screenmessage(Language.SUCCESS)
             with ba.Context('ui'):
-                self._my_replay_selected = None
-                self._refresh_my_replays()
-    def on_callback(path: str = None) -> None:
-        if path:
-            copy_replay(path, get_upload_path(), on_copy)
-    open_fileselector(get_save_path(), on_callback)
+                watch_window._my_replay_selected = None
+                watch_window._refresh_my_replays()
+        elif result == 1:
+            screenmessage(Language.UNSUCCESS)
 
-def save_replays(self) -> None:
-    def on_callback(path: str = None) -> None:
-        if path:
-            copy_replay(path, get_save_path(), None)
-    open_fileselector(get_upload_path(), on_callback)
+    def on_select(path: Optional[str]) -> None:
+        thread(ba.Call(copy_replay, path, get_upload_path()),
+               on_copy)
+    open_fileselector(get_save_path(), on_select)
+
+
+def save_replays() -> None:
+    def on_copy(result: bool) -> None:
+        if not result:
+            screenmessage(Language.SUCCESS)
+        elif result == 1:
+            screenmessage(Language.UNSUCCESS)
+
+    def on_select(path: Optional[str]) -> None:
+        thread(ba.Call(copy_replay, path, get_save_path()),
+               on_copy)
+
+    open_fileselector(get_upload_path(), on_select)
+
 
 def _set_tab(self, tab: str) -> None:
     if tab != 'my_replays':
@@ -104,12 +155,11 @@ def _set_tab(self, tab: str) -> None:
         return
 
     uiscale = ba.app.ui.uiscale
-    c_width = self._scroll_width
     c_height = self._scroll_height - 20
 
     b_width = 140 if uiscale is ba.UIScale.SMALL else 178
     b_height = (82 if uiscale is ba.UIScale.SMALL else
-                80 if uiscale is ba.UIScale.MEDIUM else 80)
+                80 if uiscale is ba.UIScale.MEDIUM else 106)
     b_space_extra = (0 if uiscale is ba.UIScale.SMALL else
                      2 if uiscale is ba.UIScale.MEDIUM else 3)
     btnv = (c_height - (48 if uiscale is ba.UIScale.SMALL else
@@ -125,55 +175,54 @@ def _set_tab(self, tab: str) -> None:
     self._set_tab_replays(tab)
     for child in self._tab_container.get_children():
         if child and child.get_widget_type() == 'button':
-            ba.buttonwidget(edit=child, 
-                position=(btnh, btnv),
-                size=(b_width, b_height))
+            ba.buttonwidget(edit=child,
+                            position=(btnh, btnv),
+                            size=(b_width, b_height))
             btnv -= b_height + b_space_extra
-    tr = get_translate()
-    self._upload_replays_button = ba.buttonwidget(
-        parent=self._tab_container,
-        size=(b_width, b_height),
-        position=(btnh, btnv),
-        button_type='square',
-        color=b_color,
-        textcolor=b_textcolor,
-        on_activate_call=self.upload_replays,
-        text_scale=tscl,
-        label=ba.Lstr(value = tr['upload']),
-        autoselect=True)
+    self._upload_replays_button = ba.buttonwidget(parent=self._tab_container,
+                                                  size=(b_width, b_height),
+                                                  position=(btnh, btnv),
+                                                  button_type='square',
+                                                  color=b_color,
+                                                  textcolor=b_textcolor,
+                                                  on_activate_call=ba.Call(upload_replays, self),
+                                                  text_scale=tscl,
+                                                  label=ba.Lstr(value=Language.UPLOAD.value),
+                                                  autoselect=True)
     btnv -= b_height + b_space_extra
-    self._save_replays_button = ba.buttonwidget(
-        parent=self._tab_container,
-        size=(b_width, b_height),
-        position=(btnh, btnv),
-        button_type='square',
-        color=b_color,
-        textcolor=b_textcolor,
-        on_activate_call=self.save_replays,
-        text_scale=tscl,
-        label=ba.Lstr(value = tr['save']),
-        autoselect=True)
+    self._save_replays_button = ba.buttonwidget(parent=self._tab_container,
+                                                size=(b_width, b_height),
+                                                position=(btnh, btnv),
+                                                button_type='square',
+                                                color=b_color,
+                                                textcolor=b_textcolor,
+                                                on_activate_call=ba.Call(save_replays),
+                                                text_scale=tscl,
+                                                label=ba.Lstr(value=Language.SAVE.value),
+                                                autoselect=True)
+
 
 def redefine(methods: Dict[str, Callable]) -> None:
     for n, func in methods.items():
         if hasattr(watch.WatchWindow, n):
-            setattr(watch.WatchWindow, n + '_replays', 
-                getattr(watch.WatchWindow, n))
+            setattr(watch.WatchWindow, n + '_replays',
+                    getattr(watch.WatchWindow, n))
         setattr(watch.WatchWindow, n, func)
+
 
 def i_was_imported() -> bool:
     result = bool(getattr(ba.app, '_replays_enabled', False))
     setattr(ba.app, '_replays_enabled', True)
     return result
 
+
 def main() -> None:
     if i_was_imported():
         return
     redefine({
-        '_set_tab': _set_tab,
-        'upload_replays': upload_replays,
-        'save_replays': save_replays
+        '_set_tab': _set_tab
     })
+
 
 # ba_meta export plugin
 class SaveAneShareReplays(ba.Plugin):
