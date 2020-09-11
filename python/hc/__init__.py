@@ -19,5 +19,7 @@
 # SOFTWARE.
 
 from .on_launch import main
+from ._config import Config
 
+config: Config
 main()
