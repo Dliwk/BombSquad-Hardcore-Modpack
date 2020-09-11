@@ -51,7 +51,11 @@ class Date(object):
         self._month = month
         self._day = day
         self.format_date()
-        self._date = f'{self.year}.{self.month}.{self.day}'
+        self._date = [f'{self.year}']
+        for i in [self.month, self.day]:
+            i = str(i) if i > 9 else f'0{i}'
+            self._date.append(i)
+        self._date = '.'.join(self._date)
         self._is_formatted = True
 
     @property
@@ -104,4 +108,4 @@ class Date(object):
     def __setattr__(self, name, value) -> None:
         if getattr(self, '_is_formatted', False):
             raise Exception()
-        return object.__setattr__(self, name, value)
+        return super().__setattr__(name, value)
