@@ -20,17 +20,51 @@
 #
 
 # ba_meta require api 6
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
-import ba
+
+if TYPE_CHECKING:
+    from typing import Any
+
+
+from ba._plugin import Plugin
+import _ba
+
+
+def i_was_imported() -> bool:
+    result = getattr(_ba.app, '_is_pro_version', False)
+    setattr(_ba.app, '_is_pro_version', True)
+    return result
+
+
+def redefine() -> None:
+    a = _ba.get_account_misc_read_val_2
+    b = _ba.get_purchased
+
+    def _a(misc_name: str, default_value: Any = None) -> Any:
+        if misc_name == 'proOptionsUnlocked':
+            return True
+        return a(misc_name, default_value)
+
+    def _b(purchase_name: str) -> bool:
+        if purchase_name in [
+              'upgrades.pro', 
+              'static.pro', 
+              'static.pro_sale']:
+            return True
+        return b(purchase_name)
+    _ba.get_account_misc_read_val_2 = _a
+    _ba.get_purchased = _b
+
 
 def main() -> None:
-    for attr in [
-        'have_pro',
-        'have_pro_options']: 
-        for module in [ba._account, ba.internal]:
-            setattr(module, attr, lambda : True)
+    if i_was_imported():
+        return
+    redefine()
+
 
 # ba_meta export plugin
-class ProVersion(ba.Plugin):
+class ProVersion(Plugin):
     def on_app_launch(self) -> None:
         main()
